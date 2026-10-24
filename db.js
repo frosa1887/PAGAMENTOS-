@@ -45,7 +45,7 @@ function situacao(c, hoje = hojeIso()) {
 // Contas que merecem aviso: vencidas ou vencendo em até `dias` dias
 function contasParaAvisar(contas, dias, hoje = hojeIso()) {
   const limite = somaDias(hoje, dias);
-  return contas.filter(c => !c.pgto && c.vcto <= limite).sort((a, b) => a.vcto.localeCompare(b.vcto));
+  return contas.filter(c => !c.pgto && !c.oculta && c.vcto <= limite).sort((a, b) => a.vcto.localeCompare(b.vcto));
 }
 function textoAviso(lista, hoje = hojeIso()) {
   const brl = n => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

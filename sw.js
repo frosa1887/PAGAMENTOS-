@@ -1,6 +1,6 @@
 // Service worker: funciona offline e verifica vencimentos em segundo plano
 importScripts("./db.js");
-const CACHE = "pagamentos-v2";
+const CACHE = "pagamentos-v3";
 const ARQUIVOS = ["./", "./index.html", "./db.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {

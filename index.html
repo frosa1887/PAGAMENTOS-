@@ -149,9 +149,11 @@ select{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:
       <button type="button" class="btn btn-ghost paynow" id="payToday">Marcar como paga hoje</button>
       <button type="button" class="btn btn-ghost paynow" id="addCal">Adicionar à agenda</button>
     </div>
+    <label class="switch">Repetir todo mês<input type="checkbox" id="fMensal" checked></label>
     <div class="confirm" id="confirmBox" hidden>
-      Excluir esta conta?
+      <span id="confirmTxt">Excluir esta conta?</span>
       <button type="button" class="btn btn-danger" id="confirmYes">Excluir</button>
+      <button type="button" class="btn btn-danger" id="confirmAll" hidden>Este e os próximos</button>
       <button type="button" class="btn btn-ghost" id="confirmNo">Cancelar</button>
     </div>
     <div class="actions">
@@ -201,7 +203,34 @@ let cur = new Date(); cur.setDate(1);
 
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2500); }
 
-async function carregar(){ contas = await DB.todas(); render(); }
+/* Contas recorrentes: cada conta tem uma "serie"; a última da série gera os meses seguintes */
+const novoId=()=>"c"+Date.now().toString(36)+Math.random().toString(36).slice(2,8)+(novoId.n=(novoId.n||0)+1);
+function diaNoMes(y,m,dia){ const ult=new Date(y,m+1,0).getDate(); return isoData(new Date(y,m,Math.min(dia,ult))); }
+const diaDe = c => c.dia || Number(c.vcto.slice(8));
+async function migrar(){
+  if (await DB.getCfg("migr1")) return;
+  for (const c of await DB.todas()){ if(!c.serie){ c.serie=c.id; c.mensal=true; c.dia=diaDe(c); await DB.salvar(c); } }
+  await DB.setCfg("migr1",true);
+}
+async function gerarRecorrentes(){
+  const hoje=new Date();
+  let ate=new Date(hoje.getFullYear(),hoje.getMonth()+1,1);          // sempre até o mês que vem
+  if (cur>ate) ate=new Date(cur.getFullYear(),cur.getMonth(),1);      // ou até o mês que você estiver vendo
+  const limite=new Date(hoje.getFullYear()+2,hoje.getMonth(),1); if (ate>limite) ate=limite;
+  const series={};
+  (await DB.todas()).forEach(c=>{ if(c.serie)(series[c.serie]=series[c.serie]||[]).push(c); });
+  for (const id in series){
+    const l=series[id].sort((a,b)=>a.vcto.localeCompare(b.vcto)), ult=l[l.length-1];
+    if (!ult.mensal) continue;
+    const dia=diaDe(ult); let [y,m]=ult.vcto.split("-").map(Number); m-=1;
+    while(true){
+      m++; if(m>11){m=0;y++;}
+      if (new Date(y,m,1)>ate) break;
+      await DB.salvar({id:novoId(),serie:id,mensal:true,dia,conta:ult.conta,valor:null,vcto:diaNoMes(y,m,dia),pgto:""});
+    }
+  }
+}
+async function carregar(){ await migrar(); await gerarRecorrentes(); contas=(await DB.todas()).filter(c=>!c.oculta); render(); }
 
 async function render(){
   const ml=cur.toLocaleDateString("pt-BR",{month:"long",year:"numeric"}); $("#monthLabel").textContent=ml.charAt(0).toUpperCase()+ml.slice(1);
@@ -244,11 +273,10 @@ async function render(){
   });
 }
 
-const novoId=()=>"c"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 async function seed(){
   const y=cur.getFullYear(), m=pad2(cur.getMonth()+1), d=n=>y+"-"+m+"-"+pad2(n);
   const ex=[["Aluguel",2500,d(5),d(4)],["Energia",480,d(10),""],["Internet",150,d(8),d(10)],["Água",210,d(18),""],["Seguro",650,d(15),d(15)],["Contabilidade",420,d(22),""],["Software",190,d(20),""]];
-  for (const [conta,valor,vcto,pgto] of ex) await DB.salvar({id:novoId(),conta,valor,vcto,pgto});
+  for (const [conta,valor,vcto,pgto] of ex){ const id=novoId(); await DB.salvar({id,serie:id,mensal:true,dia:Number(vcto.slice(8)),conta,valor,vcto,pgto}); }
   carregar();
 }
 
@@ -260,26 +288,59 @@ function openForm(c){
   $("#fValor").value=(c&&c.valor!=null)?c.valor.toFixed(2).replace(".",","):"";
   $("#fVcto").value=c?c.vcto:isoData(new Date(cur.getFullYear(),cur.getMonth(),Math.min(new Date().getDate(),28)));
   $("#fPgto").value=c?(c.pgto||""):"";
+  $("#fMensal").checked=c?!!c.mensal:true;
   $("#del").hidden=!c; $("#confirmBox").hidden=true; $("#sheetBg").hidden=false;
 }
 function lerForm(){
   const txt=$("#fValor").value.trim();
   const valor=txt?parseFloat(txt.replace(/\./g,"").replace(",",".")):null;
   if ((txt&&isNaN(valor))||!$("#fConta").value.trim()||!$("#fVcto").value) return null;
-  return {id:editId||novoId(),conta:$("#fConta").value.trim(),valor,vcto:$("#fVcto").value,pgto:$("#fPgto").value||""};
+  return {id:editId||novoId(),conta:$("#fConta").value.trim(),valor,vcto:$("#fVcto").value,pgto:$("#fPgto").value||"",mensal:$("#fMensal").checked};
 }
 const closeForm=()=>{$("#sheetBg").hidden=true;};
 $("#add").onclick=()=>openForm(null);
 $("#cancel").onclick=closeForm;
 $("#sheetBg").addEventListener("click",e=>{if(e.target.id==="sheetBg")closeForm();});
 $("#payToday").onclick=()=>{$("#fPgto").value=hojeIso();};
-$("#del").onclick=()=>{$("#confirmBox").hidden=false;};
+const atual=()=>contas.find(x=>x.id===editId);
+const daSerie=c=>contas.filter(x=>x.serie&&x.serie===c.serie);
+// Encerra a repetição a partir desta conta: apaga os meses seguintes ainda não pagos
+async function pararSerie(c,incluirEsta){
+  for (const x of daSerie(c)){
+    if (x.vcto>c.vcto && !x.pgto) await DB.excluir(x.id);
+    else if (x.mensal){ x.mensal=false; await DB.salvar(x); }
+  }
+  if (incluirEsta) await DB.excluir(c.id);
+}
+$("#del").onclick=()=>{
+  const c=atual(), rec=!!(c&&c.mensal);
+  $("#confirmTxt").textContent=rec?"Conta que se repete. Excluir:":"Excluir esta conta?";
+  $("#confirmYes").textContent=rec?"Só este mês":"Excluir";
+  $("#confirmAll").hidden=!rec; $("#confirmBox").hidden=false;
+};
 $("#confirmNo").onclick=()=>{$("#confirmBox").hidden=true;};
-$("#confirmYes").onclick=async()=>{await DB.excluir(editId); closeForm(); toast("Conta excluída"); carregar();};
+$("#confirmYes").onclick=async()=>{
+  const c=atual();
+  if (c&&c.mensal){ c.oculta=true; await DB.salvar(c); }   // some só deste mês, sem quebrar a repetição
+  else await DB.excluir(editId);
+  closeForm(); toast("Conta excluída"); carregar();
+};
+$("#confirmAll").onclick=async()=>{ await pararSerie(atual(),true); closeForm(); toast("Conta excluída deste mês em diante"); carregar(); };
 $("#form").addEventListener("submit",async e=>{
   e.preventDefault();
   const c=lerForm(); if(!c){ toast("Preencha conta e vencimento (valor só com números)"); return; }
-  await DB.salvar(c); closeForm(); toast("Conta salva"); carregar();
+  const ant=editId?atual():null;
+  c.serie=ant?(ant.serie||ant.id):c.id; c.dia=Number(c.vcto.slice(8));
+  await DB.salvar(c);
+  if (ant){
+    const futuras=daSerie(c).filter(x=>x.id!==c.id&&x.vcto>c.vcto&&!x.pgto);
+    if (ant.mensal&&!c.mensal) await pararSerie(c,false);
+    else if (c.mensal){
+      // nome e dia de vencimento valem também para os próximos meses
+      for (const x of futuras){ const [y,m]=x.vcto.split("-").map(Number); x.conta=c.conta; x.dia=c.dia; x.vcto=diaNoMes(y,m-1,c.dia); x.mensal=true; await DB.salvar(x); }
+    }
+  }
+  closeForm(); toast(c.mensal?"Conta salva. Ela se repete todo mês":"Conta salva"); carregar();
 });
 
 /* Lembrete na agenda (.ics com alarme às 9h do dia do vencimento) */
@@ -302,8 +363,8 @@ $("#addCal").onclick=()=>{
 };
 
 /* Navegação */
-$("#prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);render();};
-$("#next").onclick=()=>{cur.setMonth(cur.getMonth()+1);render();};
+$("#prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);carregar();};
+$("#next").onclick=()=>{cur.setMonth(cur.getMonth()+1);carregar();};
 document.querySelectorAll(".chip").forEach(ch=>ch.onclick=()=>{
   filtro=ch.dataset.f;
   document.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed",x===ch));
@@ -345,9 +406,9 @@ async function checarAgora(){
 }
 
 /* Backup */
-$("#exportBtn").onclick=()=>{
+$("#exportBtn").onclick=async()=>{
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(new Blob([JSON.stringify({versao:1,contas},null,2)],{type:"application/json"}));
+  a.href=URL.createObjectURL(new Blob([JSON.stringify({versao:2,contas:await DB.todas()},null,2)],{type:"application/json"}));
   a.download="backup-pagamentos-"+hojeIso()+".json";
   document.body.appendChild(a); a.click(); a.remove(); toast("Backup salvo em Downloads");
 };
@@ -358,7 +419,7 @@ $("#importFile").onchange=async e=>{
     const dados=JSON.parse(await f.text());
     const lista=Array.isArray(dados)?dados:dados.contas;
     let n=0;
-    for (const c of lista){ if(c && c.conta && c.vcto && (typeof c.valor==="number"||c.valor==null)){ await DB.salvar({id:c.id||novoId(),conta:c.conta,valor:(typeof c.valor==="number")?c.valor:null,vcto:c.vcto,pgto:c.pgto||""}); n++; } }
+    for (const c of lista){ if(c && c.conta && c.vcto && (typeof c.valor==="number"||c.valor==null)){ const id=c.id||novoId(); await DB.salvar({id,serie:c.serie||id,mensal:c.mensal!==false,dia:c.dia||Number(c.vcto.slice(8)),oculta:!!c.oculta,conta:c.conta,valor:(typeof c.valor==="number")?c.valor:null,vcto:c.vcto,pgto:c.pgto||""}); n++; } }
     toast(n+" conta(s) importada(s)"); carregar();
   }catch(err){ toast("Arquivo inválido. Use um backup exportado pelo app"); }
   e.target.value="";
