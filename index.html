@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Controle de Pagamentos</title>
+<meta name="theme-color" content="#132a6b">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Figtree:wght@400;500;600&display=swap">
+<style>
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+[hidden]{display:none!important}
+
+/* Layout: cabeçalho azul-marinho como a planilha, resumo do mês, lista de contas em linhas com selo de situação, folha inferior para editar */
+:root{
+  --bg:#f3f5f9; --surface:#ffffff; --ink:#152038; --muted:#5c6780; --line:#dde2ec;
+  --navy:#132a6b; --navy-ink:#ffffff; --accent:#1f8a4c; --accent-ink:#ffffff;
+  --ok:#1f8a4c; --ok-bg:#e3f4ea; --bad:#c23b2e; --bad-bg:#fbe6e3; --warn:#a86a00; --warn-bg:#fdf1d8; --due:#2350c4; --due-bg:#e4ebfb;
+  --display:"Archivo",system-ui,sans-serif; --body:"Figtree",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d1220; --surface:#161d30; --ink:#e8ecf5; --muted:#9aa4bd; --line:#27304a;
+  --navy:#1a347f; --navy-ink:#ffffff; --accent:#38b56d; --accent-ink:#06210f;
+  --ok:#5fd18f; --ok-bg:#163527; --bad:#ff8a7d; --bad-bg:#3d1c1a; --warn:#f2bb55; --warn-bg:#3a2c10; --due:#8fb0ff; --due-bg:#1c2a52; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0d1220; --surface:#161d30; --ink:#e8ecf5; --muted:#9aa4bd; --line:#27304a;
+  --navy:#1a347f; --navy-ink:#ffffff; --accent:#38b56d; --accent-ink:#06210f;
+  --ok:#5fd18f; --ok-bg:#163527; --bad:#ff8a7d; --bad-bg:#3d1c1a; --warn:#f2bb55; --warn-bg:#3a2c10; --due:#8fb0ff; --due-bg:#1c2a52; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--navy)}
+.wrap{max-width:640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header{background:var(--navy);color:var(--navy-ink)}
+header .wrap{padding-block:18px 20px;display:flex;flex-direction:column;gap:14px}
+.brand{display:flex;justify-content:space-between;align-items:center;gap:12px}
+h1{font-family:var(--display);font-weight:800;font-size:22px;margin:0;letter-spacing:.01em;text-wrap:balance}
+.month{display:flex;align-items:center;gap:6px}
+.month button{background:rgba(255,255,255,.12);color:var(--navy-ink);border:0;border-radius:8px;width:34px;height:34px;font-size:18px;cursor:pointer}
+.month span{min-width:118px;text-align:center;font-weight:600}
+.sum{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.sum div{background:rgba(255,255,255,.09);border-radius:10px;padding:10px 12px;min-width:0}
+.sum small{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;opacity:.8}
+.sum b{font-family:var(--display);font-size:18px;font-variant-numeric:tabular-nums}
+.sum .k-bad b{color:#ffb4aa}.sum .k-ok b{color:#9ff0bf}
+main .wrap{padding-block:16px 120px;display:flex;flex-direction:column;gap:12px}
+.filters{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
+.chip{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;white-space:nowrap;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.list{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.row{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:12px 14px;border-top:1px solid var(--line);width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;color:inherit;font:inherit;cursor:pointer}
+.row:first-child{border-top:0}
+.row:focus-visible,.chip:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.row .name{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.row .val{font-family:var(--display);font-weight:600;font-variant-numeric:tabular-nums;text-align:right}
+.row .dates{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+.badge{justify-self:end;align-self:start;font-size:12px;font-weight:600;border-radius:999px;padding:2px 10px}
+.s-pago{background:var(--ok-bg);color:var(--ok)}.s-vencido{background:var(--bad-bg);color:var(--bad)}
+.s-hoje{background:var(--warn-bg);color:var(--warn)}.s-prazo{background:var(--due-bg);color:var(--due)}
+.empty{padding:28px 18px;text-align:center;color:var(--muted);display:flex;flex-direction:column;gap:12px;align-items:center}
+.btn{border:0;border-radius:10px;padding:11px 16px;font:inherit;font-weight:600;cursor:pointer}
+.btn-primary{background:var(--accent);color:var(--accent-ink)}
+.btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn-danger{background:transparent;color:var(--bad);border:1px solid var(--bad)}
+.fab{position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--accent);color:var(--accent-ink);border:0;border-radius:999px;padding:14px 20px;font:inherit;font-weight:600;font-size:15px;box-shadow:0 6px 18px rgba(0,0,0,.22);cursor:pointer;z-index:5}
+.note{font-size:12px;color:var(--muted);text-align:center}
+.sheet-bg{position:fixed;inset:0;background:rgba(5,10,25,.5);z-index:20;display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:640px;border-radius:16px 16px 0 0;padding-block:18px calc(18px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:12px;max-height:92vh;overflow-y:auto}
+.sheet h2{font-family:var(--display);font-size:18px;margin:0}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);font-weight:500}
+input{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-width:0}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.actions .btn-primary{flex:1}
+.paynow{align-self:flex-start;font-size:13px;padding:6px 10px}
+.confirm{background:var(--bad-bg);color:var(--bad);border-radius:10px;padding:10px 12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:14px}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
+
+.icon-btn{background:rgba(255,255,255,.12);color:var(--navy-ink);border:0;border-radius:8px;width:38px;height:38px;font-size:18px;cursor:pointer}
+.alert{background:var(--warn-bg);color:var(--warn);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.alert.bad{background:var(--bad-bg);color:var(--bad)}
+.alert b{font-family:var(--display)}
+.alert button{align-self:flex-start}
+.switch{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:15px;color:var(--ink);flex-direction:row}
+.switch input{width:auto}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.sep{border:0;border-top:1px solid var(--line);margin:4px 0}
+select{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;z-index:30}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="brand">
+      <h1>Controle de Pagamentos</h1>
+      <button class="icon-btn" id="openCfg" aria-label="Configurações">⚙</button>
+    </div>
+    <div class="month">
+      <button id="prev" aria-label="Mês anterior">‹</button>
+      <span id="monthLabel"></span>
+      <button id="next" aria-label="Próximo mês">›</button>
+    </div>
+    <div class="sum">
+      <div><small>Total do mês</small><b id="tTotal">R$ 0,00</b></div>
+      <div class="k-ok"><small>Pago</small><b id="tPago">R$ 0,00</b></div>
+      <div><small>A pagar</small><b id="tAberto">R$ 0,00</b></div>
+      <div class="k-bad"><small>Vencido</small><b id="tVencido">R$ 0,00</b></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="wrap">
+    <div class="alert" id="alerta" hidden></div>
+    <div class="alert" id="installBox" hidden>
+      <b>Instale o app no celular</b>
+      Ganha ícone na tela inicial e avisos de vencimento.
+      <button class="btn btn-primary" id="installBtn">Instalar</button>
+    </div>
+    <div class="filters" role="group" aria-label="Filtrar por situação">
+      <button class="chip" data-f="todas" aria-pressed="true">Todas</button>
+      <button class="chip" data-f="vencido" aria-pressed="false">Vencidas</button>
+      <button class="chip" data-f="prazo" aria-pressed="false">A vencer</button>
+      <button class="chip" data-f="pago" aria-pressed="false">Pagas</button>
+    </div>
+    <div class="list" id="list"></div>
+    <p class="note">Seus dados ficam salvos neste celular. Faça backup em ⚙ de vez em quando.</p>
+  </div>
+</main>
+
+<button class="fab" id="add">+ Nova conta</button>
+
+<!-- Formulário da conta -->
+<div class="sheet-bg" id="sheetBg" hidden>
+  <form class="sheet" id="form" autocomplete="off">
+    <h2 id="formTitle">Nova conta</h2>
+    <label>Conta<input id="fConta" required maxlength="60" placeholder="Ex.: Energia"></label>
+    <label>Valor (R$)<input id="fValor" required inputmode="decimal" placeholder="0,00"></label>
+    <div class="two">
+      <label>Vencimento<input id="fVcto" type="date" required></label>
+      <label>Pagamento<input id="fPgto" type="date"></label>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn btn-ghost paynow" id="payToday">Marcar como paga hoje</button>
+      <button type="button" class="btn btn-ghost paynow" id="addCal">Adicionar à agenda</button>
+    </div>
+    <div class="confirm" id="confirmBox" hidden>
+      Excluir esta conta?
+      <button type="button" class="btn btn-danger" id="confirmYes">Excluir</button>
+      <button type="button" class="btn btn-ghost" id="confirmNo">Cancelar</button>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn btn-danger" id="del" hidden>Excluir</button>
+      <button type="button" class="btn btn-ghost" id="cancel">Cancelar</button>
+      <button type="submit" class="btn btn-primary">Salvar</button>
+    </div>
+  </form>
+</div>
+
+<!-- Configurações -->
+<div class="sheet-bg" id="cfgBg" hidden>
+  <div class="sheet">
+    <h2>Configurações</h2>
+    <label class="switch">Avisos de vencimento<input type="checkbox" id="cAvisos"></label>
+    <label>Avisar com antecedência de
+      <select id="cDias">
+        <option value="0">No dia do vencimento</option>
+        <option value="1">1 dia antes</option>
+        <option value="2">2 dias antes</option>
+        <option value="3">3 dias antes</option>
+        <option value="5">5 dias antes</option>
+      </select>
+    </label>
+    <p class="hint" id="avisoInfo">Com o app instalado, o celular avisa uma vez por dia sobre contas vencidas ou perto de vencer. Para um alarme garantido na hora certa, use também "Adicionar à agenda" em cada conta.</p>
+    <hr class="sep">
+    <div class="actions">
+      <button class="btn btn-ghost" id="exportBtn">Exportar backup</button>
+      <button class="btn btn-ghost" id="importBtn">Importar backup</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+    <div class="actions"><button class="btn btn-primary" id="closeCfg">Fechar</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="db.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+const brl = n => n.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const br = s => s ? s.split("-").reverse().join("/") : "";
+let contas = [], filtro = "todas", editId = null;
+let cur = new Date(); cur.setDate(1);
+
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,2500); }
+
+async function carregar(){ contas = await DB.todas(); render(); }
+
+async function render(){
+  const ml=cur.toLocaleDateString("pt-BR",{month:"long",year:"numeric"}); $("#monthLabel").textContent=ml.charAt(0).toUpperCase()+ml.slice(1);
+  const ym = cur.getFullYear()+"-"+pad2(cur.getMonth()+1);
+  const doMes = contas.filter(c=>c.vcto.slice(0,7)===ym).sort((a,b)=>a.vcto.localeCompare(b.vcto));
+  let total=0,pago=0,aberto=0,venc=0;
+  doMes.forEach(c=>{const s=situacao(c).k; total+=c.valor; if(s==="pago")pago+=c.valor; else {aberto+=c.valor; if(s==="vencido")venc+=c.valor;}});
+  $("#tTotal").textContent=brl(total); $("#tPago").textContent=brl(pago);
+  $("#tAberto").textContent=brl(aberto); $("#tVencido").textContent=brl(venc);
+
+  // Alerta no topo (todas as contas, qualquer mês)
+  const dias = (await DB.getCfg("diasAntes")) ?? 2;
+  const avisar = contasParaAvisar(contas, dias);
+  const al = $("#alerta");
+  if (avisar.length){
+    const {titulo, corpo} = textoAviso(avisar);
+    al.className = "alert" + (avisar.some(c=>c.vcto<hojeIso()) ? " bad" : "");
+    al.innerHTML = "<b></b><span style='white-space:pre-line'></span>";
+    al.querySelector("b").textContent = titulo; al.querySelector("span").textContent = corpo;
+    al.hidden = false;
+  } else al.hidden = true;
+
+  const vis = doMes.filter(c=>{const k=situacao(c).k; return filtro==="todas"||k===filtro||(filtro==="prazo"&&k==="hoje");});
+  const list=$("#list"); list.innerHTML="";
+  if (!contas.length){
+    list.innerHTML='<div class="empty"><div>Nenhuma conta cadastrada ainda.<br>Toque em <b>+ Nova conta</b> ou carregue contas de exemplo para testar.</div><button class="btn btn-ghost" id="seed">Carregar exemplos</button></div>';
+    $("#seed").onclick=seed; return;
+  }
+  if (!vis.length){ list.innerHTML='<div class="empty">Nenhuma conta '+(filtro==="todas"?"neste mês":"com essa situação neste mês")+'.</div>'; return; }
+  vis.forEach(c=>{
+    const s=situacao(c), b=document.createElement("button");
+    b.className="row"; b.type="button";
+    b.innerHTML='<span class="name"></span><span class="val"></span><span class="dates"></span><span class="badge s-'+s.k+'"></span>';
+    b.querySelector(".name").textContent=c.conta;
+    b.querySelector(".val").textContent=brl(c.valor);
+    b.querySelector(".dates").textContent="Vcto "+br(c.vcto)+(c.pgto?" · Pago "+br(c.pgto):"");
+    b.querySelector(".badge").textContent=s.t;
+    b.onclick=()=>openForm(c);
+    list.appendChild(b);
+  });
+}
+
+const novoId=()=>"c"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+async function seed(){
+  const y=cur.getFullYear(), m=pad2(cur.getMonth()+1), d=n=>y+"-"+m+"-"+pad2(n);
+  const ex=[["Aluguel",2500,d(5),d(4)],["Energia",480,d(10),""],["Internet",150,d(8),d(10)],["Água",210,d(18),""],["Seguro",650,d(15),d(15)],["Contabilidade",420,d(22),""],["Software",190,d(20),""]];
+  for (const [conta,valor,vcto,pgto] of ex) await DB.salvar({id:novoId(),conta,valor,vcto,pgto});
+  carregar();
+}
+
+/* Formulário */
+function openForm(c){
+  editId=c?c.id:null;
+  $("#formTitle").textContent=c?"Editar conta":"Nova conta";
+  $("#fConta").value=c?c.conta:"";
+  $("#fValor").value=c?c.valor.toFixed(2).replace(".",","):"";
+  $("#fVcto").value=c?c.vcto:isoData(new Date(cur.getFullYear(),cur.getMonth(),Math.min(new Date().getDate(),28)));
+  $("#fPgto").value=c?(c.pgto||""):"";
+  $("#del").hidden=!c; $("#confirmBox").hidden=true; $("#sheetBg").hidden=false;
+}
+function lerForm(){
+  const valor=parseFloat($("#fValor").value.replace(/\./g,"").replace(",","."));
+  if (isNaN(valor)||!$("#fConta").value.trim()||!$("#fVcto").value) return null;
+  return {id:editId||novoId(),conta:$("#fConta").value.trim(),valor,vcto:$("#fVcto").value,pgto:$("#fPgto").value||""};
+}
+const closeForm=()=>{$("#sheetBg").hidden=true;};
+$("#add").onclick=()=>openForm(null);
+$("#cancel").onclick=closeForm;
+$("#sheetBg").addEventListener("click",e=>{if(e.target.id==="sheetBg")closeForm();});
+$("#payToday").onclick=()=>{$("#fPgto").value=hojeIso();};
+$("#del").onclick=()=>{$("#confirmBox").hidden=false;};
+$("#confirmNo").onclick=()=>{$("#confirmBox").hidden=true;};
+$("#confirmYes").onclick=async()=>{await DB.excluir(editId); closeForm(); toast("Conta excluída"); carregar();};
+$("#form").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const c=lerForm(); if(!c){ toast("Preencha conta, valor e vencimento"); return; }
+  await DB.salvar(c); closeForm(); toast("Conta salva"); carregar();
+});
+
+/* Lembrete na agenda (.ics com alarme às 9h do dia do vencimento) */
+$("#addCal").onclick=()=>{
+  const c=lerForm(); if(!c){ toast("Preencha conta, valor e vencimento"); return; }
+  const dt=c.vcto.replace(/-/g,""), fim=somaDias(c.vcto,1).replace(/-/g,"");
+  const esc=s=>s.replace(/[\\,;]/g,m=>"\\"+m);
+  const ics=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Controle de Pagamentos//PT-BR","BEGIN:VEVENT",
+    "UID:"+c.id+"@controle-pagamentos","DTSTAMP:"+new Date().toISOString().replace(/[-:]/g,"").slice(0,15)+"Z",
+    "DTSTART;VALUE=DATE:"+dt,"DTEND;VALUE=DATE:"+fim,
+    "SUMMARY:"+esc("Pagar "+c.conta+" - "+brl(c.valor)),
+    "DESCRIPTION:"+esc("Vencimento de "+c.conta+" no valor de "+brl(c.valor)),
+    "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+esc("Pagar "+c.conta),"TRIGGER:PT9H","END:VALARM",
+    "END:VEVENT","END:VCALENDAR"].join("\r\n");
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([ics],{type:"text/calendar"}));
+  a.download="lembrete-"+c.conta.toLowerCase().replace(/[^a-z0-9]+/gi,"-")+".ics";
+  document.body.appendChild(a); a.click(); a.remove();
+  toast("Abra o arquivo baixado para salvar na agenda");
+};
+
+/* Navegação */
+$("#prev").onclick=()=>{cur.setMonth(cur.getMonth()-1);render();};
+$("#next").onclick=()=>{cur.setMonth(cur.getMonth()+1);render();};
+document.querySelectorAll(".chip").forEach(ch=>ch.onclick=()=>{
+  filtro=ch.dataset.f;
+  document.querySelectorAll(".chip").forEach(x=>x.setAttribute("aria-pressed",x===ch));
+  render();
+});
+
+/* Configurações e avisos */
+$("#openCfg").onclick=async()=>{
+  $("#cAvisos").checked=!!(await DB.getCfg("avisos")) && ("Notification" in window) && Notification.permission==="granted";
+  $("#cDias").value=String((await DB.getCfg("diasAntes")) ?? 2);
+  $("#cfgBg").hidden=false;
+};
+$("#closeCfg").onclick=()=>{$("#cfgBg").hidden=true;};
+$("#cDias").onchange=async e=>{await DB.setCfg("diasAntes",Number(e.target.value)); render();};
+$("#cAvisos").onchange=async e=>{
+  if (e.target.checked){
+    if (!("Notification" in window)){ toast("Este navegador não permite notificações"); e.target.checked=false; return; }
+    const p=await Notification.requestPermission();
+    if (p!=="granted"){ toast("Permita as notificações nas configurações do celular"); e.target.checked=false; return; }
+    await DB.setCfg("avisos",true);
+    const ok=await registrarSyncPeriodico();
+    toast(ok?"Avisos ativados":"Avisos ativados ao abrir o app. Instale-o para receber em segundo plano");
+    await DB.setCfg("ultimoAviso","");
+    checarAgora();
+  } else { await DB.setCfg("avisos",false); toast("Avisos desativados"); }
+};
+async function registrarSyncPeriodico(){
+  try{
+    const reg=await navigator.serviceWorker.ready;
+    if (!("periodicSync" in reg)) return false;
+    const st=await navigator.permissions.query({name:"periodic-background-sync"});
+    if (st.state!=="granted") return false;
+    await reg.periodicSync.register("checar-contas",{minInterval:12*60*60*1000});
+    return true;
+  }catch(e){ return false; }
+}
+async function checarAgora(){
+  try{ const reg=await navigator.serviceWorker.ready; reg.active && reg.active.postMessage("checar"); }catch(e){}
+}
+
+/* Backup */
+$("#exportBtn").onclick=()=>{
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([JSON.stringify({versao:1,contas},null,2)],{type:"application/json"}));
+  a.download="backup-pagamentos-"+hojeIso()+".json";
+  document.body.appendChild(a); a.click(); a.remove(); toast("Backup salvo em Downloads");
+};
+$("#importBtn").onclick=()=>$("#importFile").click();
+$("#importFile").onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const dados=JSON.parse(await f.text());
+    const lista=Array.isArray(dados)?dados:dados.contas;
+    let n=0;
+    for (const c of lista){ if(c && c.conta && c.vcto && typeof c.valor==="number"){ await DB.salvar({id:c.id||novoId(),conta:c.conta,valor:c.valor,vcto:c.vcto,pgto:c.pgto||""}); n++; } }
+    toast(n+" conta(s) importada(s)"); carregar();
+  }catch(err){ toast("Arquivo inválido. Use um backup exportado pelo app"); }
+  e.target.value="";
+};
+
+/* Instalação */
+let pedidoInstalar=null;
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault(); pedidoInstalar=e; $("#installBox").hidden=false;});
+$("#installBtn").onclick=async()=>{ if(!pedidoInstalar)return; pedidoInstalar.prompt(); await pedidoInstalar.userChoice; pedidoInstalar=null; $("#installBox").hidden=true; };
+window.addEventListener("appinstalled",()=>{$("#installBox").hidden=true; toast("App instalado");});
+
+/* Início */
+if ("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").then(()=>{ registrarSyncPeriodico(); checarAgora(); }).catch(()=>{});
+}
+carregar();
+</script>
+</body>
+</html>
