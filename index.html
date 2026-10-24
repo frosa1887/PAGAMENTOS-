@@ -89,6 +89,7 @@ input{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1
 .hint{font-size:13px;color:var(--muted);margin:0}
 .sep{border:0;border-top:1px solid var(--line);margin:4px 0}
 select{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.row .val.tbd{color:var(--muted);font-family:var(--body);font-weight:500;font-size:14px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;z-index:30}
 </style>
 </head>
@@ -139,7 +140,7 @@ select{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:
   <form class="sheet" id="form" autocomplete="off">
     <h2 id="formTitle">Nova conta</h2>
     <label>Conta<input id="fConta" required maxlength="60" placeholder="Ex.: Energia"></label>
-    <label>Valor (R$)<input id="fValor" required inputmode="decimal" placeholder="0,00"></label>
+    <label>Valor (R$) — opcional<input id="fValor" inputmode="decimal" placeholder="Deixe em branco se ainda não sabe"></label>
     <div class="two">
       <label>Vencimento<input id="fVcto" type="date" required></label>
       <label>Pagamento<input id="fPgto" type="date"></label>
@@ -192,6 +193,8 @@ select{font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:
 <script>
 const $ = s => document.querySelector(s);
 const brl = n => n.toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const valorTxt = v => (v==null) ? "A definir" : brl(v);
+const num = v => v==null ? 0 : v;
 const br = s => s ? s.split("-").reverse().join("/") : "";
 let contas = [], filtro = "todas", editId = null;
 let cur = new Date(); cur.setDate(1);
@@ -205,7 +208,7 @@ async function render(){
   const ym = cur.getFullYear()+"-"+pad2(cur.getMonth()+1);
   const doMes = contas.filter(c=>c.vcto.slice(0,7)===ym).sort((a,b)=>a.vcto.localeCompare(b.vcto));
   let total=0,pago=0,aberto=0,venc=0;
-  doMes.forEach(c=>{const s=situacao(c).k; total+=c.valor; if(s==="pago")pago+=c.valor; else {aberto+=c.valor; if(s==="vencido")venc+=c.valor;}});
+  doMes.forEach(c=>{const s=situacao(c).k, v=num(c.valor); total+=v; if(s==="pago")pago+=v; else {aberto+=v; if(s==="vencido")venc+=v;}});
   $("#tTotal").textContent=brl(total); $("#tPago").textContent=brl(pago);
   $("#tAberto").textContent=brl(aberto); $("#tVencido").textContent=brl(venc);
 
@@ -233,7 +236,7 @@ async function render(){
     b.className="row"; b.type="button";
     b.innerHTML='<span class="name"></span><span class="val"></span><span class="dates"></span><span class="badge s-'+s.k+'"></span>';
     b.querySelector(".name").textContent=c.conta;
-    b.querySelector(".val").textContent=brl(c.valor);
+    b.querySelector(".val").textContent=valorTxt(c.valor); if(c.valor==null) b.querySelector(".val").classList.add("tbd");
     b.querySelector(".dates").textContent="Vcto "+br(c.vcto)+(c.pgto?" · Pago "+br(c.pgto):"");
     b.querySelector(".badge").textContent=s.t;
     b.onclick=()=>openForm(c);
@@ -254,14 +257,15 @@ function openForm(c){
   editId=c?c.id:null;
   $("#formTitle").textContent=c?"Editar conta":"Nova conta";
   $("#fConta").value=c?c.conta:"";
-  $("#fValor").value=c?c.valor.toFixed(2).replace(".",","):"";
+  $("#fValor").value=(c&&c.valor!=null)?c.valor.toFixed(2).replace(".",","):"";
   $("#fVcto").value=c?c.vcto:isoData(new Date(cur.getFullYear(),cur.getMonth(),Math.min(new Date().getDate(),28)));
   $("#fPgto").value=c?(c.pgto||""):"";
   $("#del").hidden=!c; $("#confirmBox").hidden=true; $("#sheetBg").hidden=false;
 }
 function lerForm(){
-  const valor=parseFloat($("#fValor").value.replace(/\./g,"").replace(",","."));
-  if (isNaN(valor)||!$("#fConta").value.trim()||!$("#fVcto").value) return null;
+  const txt=$("#fValor").value.trim();
+  const valor=txt?parseFloat(txt.replace(/\./g,"").replace(",",".")):null;
+  if ((txt&&isNaN(valor))||!$("#fConta").value.trim()||!$("#fVcto").value) return null;
   return {id:editId||novoId(),conta:$("#fConta").value.trim(),valor,vcto:$("#fVcto").value,pgto:$("#fPgto").value||""};
 }
 const closeForm=()=>{$("#sheetBg").hidden=true;};
@@ -274,20 +278,20 @@ $("#confirmNo").onclick=()=>{$("#confirmBox").hidden=true;};
 $("#confirmYes").onclick=async()=>{await DB.excluir(editId); closeForm(); toast("Conta excluída"); carregar();};
 $("#form").addEventListener("submit",async e=>{
   e.preventDefault();
-  const c=lerForm(); if(!c){ toast("Preencha conta, valor e vencimento"); return; }
+  const c=lerForm(); if(!c){ toast("Preencha conta e vencimento (valor só com números)"); return; }
   await DB.salvar(c); closeForm(); toast("Conta salva"); carregar();
 });
 
 /* Lembrete na agenda (.ics com alarme às 9h do dia do vencimento) */
 $("#addCal").onclick=()=>{
-  const c=lerForm(); if(!c){ toast("Preencha conta, valor e vencimento"); return; }
+  const c=lerForm(); if(!c){ toast("Preencha conta e vencimento"); return; }
   const dt=c.vcto.replace(/-/g,""), fim=somaDias(c.vcto,1).replace(/-/g,"");
   const esc=s=>s.replace(/[\\,;]/g,m=>"\\"+m);
   const ics=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Controle de Pagamentos//PT-BR","BEGIN:VEVENT",
     "UID:"+c.id+"@controle-pagamentos","DTSTAMP:"+new Date().toISOString().replace(/[-:]/g,"").slice(0,15)+"Z",
     "DTSTART;VALUE=DATE:"+dt,"DTEND;VALUE=DATE:"+fim,
-    "SUMMARY:"+esc("Pagar "+c.conta+" - "+brl(c.valor)),
-    "DESCRIPTION:"+esc("Vencimento de "+c.conta+" no valor de "+brl(c.valor)),
+    "SUMMARY:"+esc("Pagar "+c.conta+(c.valor!=null?" - "+brl(c.valor):"")),
+    "DESCRIPTION:"+esc("Vencimento de "+c.conta+(c.valor!=null?" no valor de "+brl(c.valor):"")),
     "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+esc("Pagar "+c.conta),"TRIGGER:PT9H","END:VALARM",
     "END:VEVENT","END:VCALENDAR"].join("\r\n");
   const a=document.createElement("a");
@@ -354,7 +358,7 @@ $("#importFile").onchange=async e=>{
     const dados=JSON.parse(await f.text());
     const lista=Array.isArray(dados)?dados:dados.contas;
     let n=0;
-    for (const c of lista){ if(c && c.conta && c.vcto && typeof c.valor==="number"){ await DB.salvar({id:c.id||novoId(),conta:c.conta,valor:c.valor,vcto:c.vcto,pgto:c.pgto||""}); n++; } }
+    for (const c of lista){ if(c && c.conta && c.vcto && (typeof c.valor==="number"||c.valor==null)){ await DB.salvar({id:c.id||novoId(),conta:c.conta,valor:(typeof c.valor==="number")?c.valor:null,vcto:c.vcto,pgto:c.pgto||""}); n++; } }
     toast(n+" conta(s) importada(s)"); carregar();
   }catch(err){ toast("Arquivo inválido. Use um backup exportado pelo app"); }
   e.target.value="";

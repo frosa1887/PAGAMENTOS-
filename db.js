@@ -53,7 +53,7 @@ function textoAviso(lista, hoje = hojeIso()) {
   const titulo = venc ? `${venc} conta(s) vencida(s)` : `${lista.length} conta(s) para pagar`;
   const corpo = lista.slice(0, 4).map(c => {
     const q = c.vcto < hoje ? "venceu" : c.vcto === hoje ? "vence hoje" : "vence " + c.vcto.split("-").reverse().slice(0, 2).join("/");
-    return `${c.conta} ${brl(c.valor)} · ${q}`;
+    return `${c.conta}${c.valor != null ? " " + brl(c.valor) : ""} · ${q}`;
   }).join("\n") + (lista.length > 4 ? `\n+ ${lista.length - 4} outra(s)` : "");
   return { titulo, corpo };
 }
